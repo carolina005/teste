@@ -3,39 +3,67 @@ import sqlite3
 
 app = Flask(__name__)
 
-class Database:
-    def __init__(self, db_name):
-        self.conn = sqlite3.connect(db_name, check_same_thread=False)
-        self.cursor = self.conn.cursor()
+DATABASE = 'callcenter.db'
 
-    def get_hamburguer_names(self):
-        self.cursor.execute("SELECT nome_hamburguer FROM Hamburguer")
-        return [row[0] for row in self.cursor.fetchall()]
+def execute_query(query, args=()):
+    with sqlite3.connect(DATABASE) as conn:
+        cursor = conn.cursor()
+        cursor.execute(query, args)
+        conn.commit()
+        return cursor.lastrowid
 
-    def insert_order(self, nome, morada, telefone, hamburguer, quantidade, tamanho, valor_total):
-        self.cursor.execute("INSERT INTO Cliente (nome, morada, telefone) VALUES (?, ?, ?)", (nome, morada, telefone))
-        id_cliente = self.cursor.lastrowid
-        self.cursor.execute("""
-            INSERT INTO Pedido (id_cliente, nome_hamburguer, quantidade, tamanho, valor_total)
-            VALUES (?, ?, ?, ?, ?)
-        """, (id_cliente, hamburguer, quantidade, tamanho, valor_total))
-        self.conn.commit()
+def query_db(query, args=(), one=False):
+    with sqlite3.connect(DATABASE) as conn:
+        cursor = conn.cursor()
+        cursor.execute(query, args)
+        rv = cursor.fetchall()
+        return (rv[0] if rv else None) if one else rv
 
-db = Database('callcenter.db')
+@app.route('/')
+def index():
+    return "Web Service Flask está funcionando!", 200
 
-@app.route('/hamburgers', methods=['GET'])
-def get_hamburgers():
-    hamburgers = db.get_hamburguer_names()
-    return jsonify(hamburgers)
-
-@app.route('/order', methods=['POST'])
-def make_order():
+@app.route('/clientes', methods=['POST'])
+def add_cliente():
     data = request.json
-    db.insert_order(
-        data['nome'], data['morada'], data['telefone'],
-        data['hamburguer'], data['quantidade'], data['tamanho'], data['valor_total']
-    )
-    return jsonify({'message': 'Pedido realizado com sucesso!'})
+    print("Recebendo cliente:", data)  # Adicionando mensagem de depuração
+    query = "INSERT INTO Cliente (nome, morada, telefone) VALUES (?, ?, ?)"
+    id_cliente = execute_query(query, (data['nome'], data['morada'], data['telefone']))
+    return jsonify({'id_cliente': id_cliente}), 201
+
+@app.route('/clientes', methods=['GET'])
+def get_clientes():
+    clientes = query_db("SELECT * FROM Cliente")
+    return jsonify(clientes), 200
+
+@app.route('/hamburgueres', methods=['POST'])
+def add_hamburguer():
+    data = request.json
+    print("Recebendo hamburguer:", data)  # Adicionando mensagem de depuração
+    query = "INSERT INTO Hamburguer (nome_hamburguer, ingredientes) VALUES (?, ?)"
+    execute_query(query, (data['nome_hamburguer'], data['ingredientes']))
+    return jsonify({'nome_hamburguer': data['nome_hamburguer']}), 201
+
+@app.route('/hamburgueres', methods=['GET'])
+def get_hamburgueres():
+    hamburgueres = query_db("SELECT * FROM Hamburguer")
+    return jsonify(hamburgueres), 200
+
+@app.route('/pedidos', methods=['POST'])
+def add_pedido():
+    data = request.json
+    print("Recebendo pedido:", data)  # Adicionando mensagem de depuração
+    query = """
+    INSERT INTO Pedido (id_cliente, nome_hamburguer, quantidade, tamanho, valor_total) 
+    VALUES (?, ?, ?, ?, ?)
+    """
+    id_pedido = execute_query(query, (data['id_cliente'], data['nome_hamburguer'], data['quantidade'], data['tamanho'], data['valor_total']))
+    return jsonify({'id_pedido': id_pedido}), 201
+
+@app.route('/pedidos', methods=['GET'])
+def get_pedidos():
+    pedidos = query_db("SELECT * FROM Pedido")
+    return jsonify(pedidos), 200
 
 if __name__ == '__main__':
     app.run(debug=True)
